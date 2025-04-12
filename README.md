@@ -155,7 +155,7 @@ Grab it from here and edit <https://www.icloud.com/shortcuts/9270d7905a72458e925
 
 Original concept by Yusuke Wada <https://github.com/yusukebe>
 
-Modifications by [thesammykins] <https://github.com/thesammykins>
+Modifications by thesammykins <https://github.com/thesammykins>
 
 ## License
 
