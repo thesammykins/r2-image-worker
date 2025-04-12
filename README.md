@@ -96,10 +96,13 @@ The body should be `multipart/form-data` containing:
 
 - `file`: The image or video file binary.
 - `filename`: The original filename (e.g., `my_vacation_video.mp4`).
+- `url_preference` (Optional): Text value indicating desired URL type for images. Send `Preview-Optimized URL` to get a Cloudflare Image Transformation URL. If omitted or set to anything else (e.g., `Original URL`), a direct link is returned.
 
 **Response:**
 
-- `200 OK`: Returns the full URL to the uploaded file as plain text (e.g., `https://your-domain.com/videos/1678886400000_my_vacation_video.mp4`).
+- `200 OK`: Returns the full URL to the uploaded file as plain text.
+    - For images, if `url_preference` was set to `Preview-Optimized URL`, this will be a longer `/cdn-cgi/image/...` URL designed for better embed previews.
+    - Otherwise (for videos, files, or if preference wasn't for optimized), this will be the direct URL (e.g., `https://your-domain.com/images/1678886400000_image.jpg`).
 - `400 Bad Request`: Missing `file` or `filename`.
 - `401 Unauthorized`: Missing or incorrect `X-Auth-Key` header.
 - `500 Internal Server Error`: Failed to upload to R2.
@@ -134,22 +137,25 @@ Serves the video file associated with the key (`timestamp_sanitized-filename`).
 
 ## Using with Shortcuts (macOS/iOS)
 
-This worker is ideal for quickly uploading clipboard content via Shortcuts.
+This worker is ideal for quickly uploading clipboard content or files via Shortcuts.
 
 **Key Shortcut Actions:**
 
-1.  `Get Clipboard`: Gets the raw content (image or video).
-2.  `Get Details of Files`: Get `Name` from the `Clipboard` variable (from step 1).
+1.  Determine the input file (`FileToUpload`) and filename (`FilenameToUpload`) either from `Shortcut Input` (for Share Sheet/Quick Actions) or from `Clipboard` (if no direct input).
+2.  **(Optional) Add `Choose from Menu` action:** Prompt the user to select between `Original URL` and `Preview-Optimized URL`. Store the result in a variable (e.g., `UrlPreference`).
 3.  `Get contents of URL`:
     *   URL: `https://your-domain.com/upload` (replace with your actual domain)
     *   Method: `PUT`
     *   Headers: Add `X-Auth-Key` with your secret key value.
     *   Request Body: `Form`
-        *   Add field: Key=`file`, Type=`File`, Value=`Clipboard` (variable from step 1)
-        *   Add field: Key=`filename`, Type=`Text`, Value=`Name` (variable from step 2)
+        *   Add field: Key=`file`, Type=`File`, Value=`FileToUpload` (variable from step 1)
+        *   Add field: Key=`filename`, Type=`Text`, Value=`FilenameToUpload` (variable from step 1)
+        *   **(Optional) Add field:** Key=`url_preference`, Type=`Text`, Value=`UrlPreference` (variable from step 2)
 4.  `Copy to Clipboard`: Copy the output of step 3 (which is the returned URL).
 
-Grab it from here and edit <https://www.icloud.com/shortcuts/9270d7905a72458e925a51b6323c3693>
+Grab it from here and edit <https://www.icloud.com/shortcuts/1f10d1c0ee9c45ef9551af3c69817564>
+
+Also if you have issues  with images being formatted incorrectly you can auto-crop with this shortcut <https://www.icloud.com/shortcuts/726a778e3d314068af9cf9b3b56db925>
 
 ## Author
 
