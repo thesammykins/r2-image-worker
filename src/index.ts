@@ -39,40 +39,46 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>, next: Next) => {
   await next()
 })
 
-// Handle the file upload (Auth is now handled by the middleware above)
+// Handle the file upload
 app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
-  // Expect 'file' and optional 'filename' fields
-  const data = await c.req.parseBody<{ file?: File, filename?: string }>()
+  // Expect file, filename, and the new optional preference
+  const data = await c.req.parseBody<{ file?: File, filename?: string, url_preference?: string }>()
 
   if (!data?.file) {
     return c.text('Missing "file" in form data', 400)
   }
 
-  // Use provided filename or fallback to file.name
+  const body = data.file
+  const mimeType = data.file.type
   const originalFilename = data.filename || data.file.name;
   if (!originalFilename) {
       return c.text('Missing filename', 400);
   }
 
-  const body = data.file
-  const type = data.file.type
-  const sanitizedName = sanitizeFilename(originalFilename);
-  const timestamp = Date.now(); // Get current timestamp
+  const timestamp = Date.now();
 
-  // Determine prefix (images/videos)
-  let prefix = 'images'
-  if (type.startsWith('video/')) {
-    prefix = 'videos'
+  // Determine prefix and if it's an image
+  let prefix: string;
+  let isImage = false;
+  if (mimeType.startsWith('image/')) {
+    prefix = 'images';
+    isImage = true;
+  } else if (mimeType.startsWith('video/')) {
+    prefix = 'videos';
+  } else {
+    prefix = 'files';
   }
 
-  // Construct the key: prefix/timestamp_sanitizedName
-  // Example: images/1678886400000_my_photo.jpg
-  const key = `${timestamp}_${sanitizedName}`;
+  const key = `${timestamp}_${originalFilename}`;
   const r2Key = `${prefix}/${key}`; 
 
+  // --- Add this log ---
+  console.log(`Received url_preference: '${data.url_preference}'`);
+  // -------------------
+
   try {
-      const buffer = await body.arrayBuffer() // Read into buffer for put
-      await c.env.BUCKET.put(r2Key, buffer, { httpMetadata: { contentType: type } })
+      const buffer = await body.arrayBuffer()
+      await c.env.BUCKET.put(r2Key, buffer, { httpMetadata: { contentType: mimeType } })
   } catch (e) {
     if (e instanceof Error) {
       return c.text(`Failed to upload to R2: ${e.message}`, 500)
@@ -80,11 +86,28 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
     return c.text('Failed to upload to R2 due to an unknown error', 500)
   }
 
-  // Construct the full URL
-  const url = new URL(c.req.url)
-  const fullUrl = `${url.protocol}//${url.host}/${r2Key}`
+  // --- Construct the URL to return based on preference ---
+  const requestUrl = new URL(c.req.url)
+  const baseUrl = `${requestUrl.protocol}//${requestUrl.host}`
+  const directUrl = `${baseUrl}/${r2Key}`; // The standard direct URL
+  let finalUrl: string;
 
-  return c.text(fullUrl, 200)
+  // Read the preference from the form data, default to 'Original URL' if missing
+  const urlPreference = data.url_preference || 'Original URL'; 
+
+  if (isImage && urlPreference === 'Preview-Optimized URL') {
+    // Construct Cloudflare Image Transformation URL only if image AND preference matches
+    const transformationParams = 'fit=contain,width=1200,format=auto';
+    finalUrl = `${baseUrl}/cdn-cgi/image/${transformationParams}/${directUrl}`;
+    console.log(`Returning transformed image URL based on preference: ${finalUrl}`);
+  } else {
+    // Default to direct URL for non-images, or if preference is 'Original URL' or missing
+    finalUrl = directUrl;
+    console.log(`Returning direct file URL (default or preference): ${finalUrl}`);
+  }
+  // --- End URL Construction ---
+
+  return c.text(finalUrl, 200)
 })
 
 // Apply caching middleware to GET requests
