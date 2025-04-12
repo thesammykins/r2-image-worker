@@ -1,139 +1,160 @@
-# r2-image-worker
+# r2-media-worker
 
-Store and deliver images with Cloudflare R2 backend Cloudflare Workers.
+Store and deliver images and videos with Cloudflare R2 backend via Cloudflare Workers.
 
 ## Synopsis
 
-1. Deploy **r2-image-worker** to Cloudflare Workers.
-2. `PUT` your image file to **r2-image-worker**.
-3. The image file will be stored in Cloudflare R2 storage.
-4. **r2-image-worker** will respond the key of the stored image. `abcdef.png`
-5. **r2-image-worker** serve the images on `https://r2-image-worker.username.workers.dev/abcdef.png`
-6. Images will be cached on Cloudflare CDN.
+1. Deploy **r2-media-worker** to Cloudflare Workers using your custom domain.
+2. `PUT` your image or video file (and its original filename) to the worker's `/upload` endpoint.
+3. The file will be stored in a Cloudflare R2 storage bucket.
+4. **r2-media-worker** will respond with the full, direct URL to the stored file (e.g., `https://your-domain.com/images/1678886400000_my_photo.jpg`).
+5. **r2-media-worker** serves images from `/images/<key>` and videos from `/videos/<key>` (where `<key>` is `timestamp_sanitized-filename`).
+6. Files are cached on the Cloudflare CDN.
 
 ```plain
-User => Image => r2-image-worker => R2
-User <= Image <= r2-image-worker <= CDN Cache <= R2
+User => File + Filename => r2-media-worker => R2
+User <= URL <= r2-media-worker
+User <= File <= URL (served by Worker/CDN Cache/R2)
 ```
 
 ## Prerequisites
 
-- Cloudflare Account
-- Wrangler CLI
-- _Optional: Custom domain - (Cache API is not available in `.workers.dev` domain)_
+- Cloudflare Account (with a configured zone/domain)
+- Wrangler CLI (v3 or later recommended)
+- Node.js and npm
 
 ## Set up
 
-First, `git clone`
+First, clone the repository:
 
-```plain
-git clone https://github.com/yusukebe/r2-image-worker.git
-cd r2-image-worker
+```bash
+git clone <your-repo-url> # Replace with your repository URL
+cd r2-media-worker
+npm install
 ```
 
-Create R2 bucket:
+Create an R2 bucket using Wrangler:
 
-```plain
-wrangler r2 bucket create images
+```bash
+# Replace 'your-bucket-name' with the desired name for your R2 bucket
+wrangler r2 bucket create your-bucket-name
 ```
 
 Copy `wrangler.example.toml` to `wrangler.toml`:
 
-```plain
+```bash
 cp wrangler.example.toml wrangler.toml
 ```
 
-Edit `wrangler.toml`.
+Edit `wrangler.toml`:
+
+- Update `compatibility_date` to a recent date.
+- Configure the `[[routes]]` section with your desired `pattern` (e.g., `subdomain.your-domain.com/`).
+- In the `[[r2_buckets]]` section, set `bucket_name` to the name you created above.
 
 ## Variables
 
 ### Secret variables
 
-Secret variables are:
+The worker uses one secret variable for authentication:
 
-- `USER` - User name of basic auth
-- `PASS` - User password of basic auth
+- `AUTH_KEY` - A shared secret key required for uploads.
 
-To set these, use `wrangler secret put` command:
+Generate a strong, random key (e.g., using a password manager or `openssl rand -base64 32`).
+
+To set the secret, use the `wrangler secret put` command:
 
 ```bash
-wrangler secret put USER
+wrangler secret put AUTH_KEY
+# Paste your generated secret key when prompted
 ```
 
 ## Publish
 
-To publish to your Cloudflare Workers:
+To publish the worker to your Cloudflare account:
 
 ```bash
 npm run deploy
+# Or directly: npx wrangler deploy
 ```
 
 ## Endpoints
 
-### `/upload`
+### `/upload` (PUT)
 
-Header:
+**Headers:**
 
-To pass the Basic Auth, add the Base64 string of "user:pass" to `Authorization` header.
-
-```plain
-Authorization: Basic ...
-```
-
-Body:
-
-Value of `body` should be a `Form` contains an image binary and a width and a height.
-
-- image: `File`
-- width: `string` (optional)
-- height: `string` (optional)
-
-### Test
-
-1. Download a simple image
-
-```bash
-wget https://hono.dev/images/hono-kawaii.png -O /tmp/1.jpg
-```
-
-2. Upload to u endpoint.
-
-```bash
-curl -X PUT \
-  -F "image=@/tmp/1.jpg" \
-  https://change_user_here:change_pass_here@change_url_here/upload \
-  -vvv
-```
-
-3. Visit the image
-
-```bash
-https://change_user_here:change_pass_here@change_url_here/image_returned_in_step2
-```
-
-## Tips
-
-### Using Cloudflare Images
-
-You can deliver your images via [Cloudflare Images](https://developers.cloudflare.com/images/) if you are using a custom domain.
+Requires an authentication header:
 
 ```plain
-https://<ZONE>/cdn-cgi/image/format=auto,width=800,quality=75/<SOURCE-IMAGE>
+X-Auth-Key: <your-secret-key>
 ```
 
-### Using with Shortcuts
+**Request Body (Form Data):**
 
-Awesome!!!
+The body should be `multipart/form-data` containing:
 
-![Screen cast](https://github.com/user-attachments/assets/c9239e96-dce9-45ba-aa07-a94aa53b3ba7)
+- `file`: The image or video file binary.
+- `filename`: The original filename (e.g., `my_vacation_video.mp4`).
 
-Setting shortcuts like this:
+**Response:**
 
-![Screenshot](https://ss.yusukebe.com/cdn-cgi/image/format=auto,quality=90/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a_1530x2366.png)
+- `200 OK`: Returns the full URL to the uploaded file as plain text (e.g., `https://your-domain.com/videos/1678886400000_my_vacation_video.mp4`).
+- `400 Bad Request`: Missing `file` or `filename`.
+- `401 Unauthorized`: Missing or incorrect `X-Auth-Key` header.
+- `500 Internal Server Error`: Failed to upload to R2.
+
+### `/images/<key>` (GET)
+
+Serves the image file associated with the key (`timestamp_sanitized-filename`).
+
+### `/videos/<key>` (GET)
+
+Serves the video file associated with the key (`timestamp_sanitized-filename`).
+
+## Example Usage (curl)
+
+1. Upload a file:
+
+   ```bash
+   # Replace placeholders with your actual values
+   YOUR_DOMAIN="your-domain.com"
+   YOUR_KEY="your-secure-auth-key"
+   FILE_PATH="/path/to/your/image.jpg"
+   FILENAME="image.jpg"
+
+   curl -X PUT \
+     -H "X-Auth-Key: ${YOUR_KEY}" \
+     -F "file=@${FILE_PATH}" \
+     -F "filename=${FILENAME}" \
+     "https://${YOUR_DOMAIN}/upload"
+   ```
+
+2. The command will output the URL (e.g., `https://your-domain.com/images/1678886400000_image.jpg`). Visit this URL in your browser.
+
+## Using with Shortcuts (macOS/iOS)
+
+This worker is ideal for quickly uploading clipboard content via Shortcuts.
+
+**Key Shortcut Actions:**
+
+1.  `Get Clipboard`: Gets the raw content (image or video).
+2.  `Get Details of Files`: Get `Name` from the `Clipboard` variable (from step 1).
+3.  `Get contents of URL`:
+    *   URL: `https://your-domain.com/upload` (replace with your actual domain)
+    *   Method: `PUT`
+    *   Headers: Add `X-Auth-Key` with your secret key value.
+    *   Request Body: `Form`
+        *   Add field: Key=`file`, Type=`File`, Value=`Clipboard` (variable from step 1)
+        *   Add field: Key=`filename`, Type=`Text`, Value=`Name` (variable from step 2)
+4.  `Copy to Clipboard`: Copy the output of step 3 (which is the returned URL).
+
+Grab it from here and edit <https://www.icloud.com/shortcuts/9270d7905a72458e925a51b6323c3693>
 
 ## Author
 
-Yusuke Wada <https://github.com/yusukebe>
+Original concept by Yusuke Wada <https://github.com/yusukebe>
+Modifications by [thesammykins] <https://github.com/thesammykins>
 
 ## License
 

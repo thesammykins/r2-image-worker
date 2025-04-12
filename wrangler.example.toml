@@ -1,15 +1,28 @@
-name = "r2-image-worker"
-workers_dev = true
+# Example wrangler.toml configuration for r2-image-worker
 
-compatibility_date = "2024-09-02"
+# Top-level configuration
+name = "r2-image-worker" # Name of your worker (can be changed)
+main = "src/index.ts"    # Entry point for your worker code (usually correct)
+compatibility_date = "YYYY-MM-DD" # Replace with a recent date, e.g., "2024-09-02"
 
+# Route configuration for your custom domain
+# Replace the pattern with the domain/subdomain you want to use
+[[routes]]
+pattern = "your-subdomain.your-domain.com/" # Highly recommended
+custom_domain = true
+
+# R2 Bucket Binding
+# This makes your R2 bucket available to the worker script via the 'BUCKET' binding
 [[r2_buckets]]
-binding = 'BUCKET'
-bucket_name = 'images'
-preview_bucket_name = 'images'
+binding = "BUCKET"              # Variable name in your Worker code (env.BUCKET) - KEEP THIS
+bucket_name = "your-production-r2-bucket-name" # *** Replace with your actual R2 bucket name ***
 
+# Placement configuration
+# "smart" is usually a good default
 [placement]
 mode = "smart"
 
-[observability]
-enabled = true
+# Observability / Logging (Optional)
+# Enables basic logging viewable via `wrangler tail` or Cloudflare dashboard
+#[observability]
+#enabled = true
