@@ -169,6 +169,36 @@ Serves any other file type associated with the key.
 
 2. The command will output the URL (e.g., `https://files.your-domain.com/files/archive_abc123.zip`). Visit this URL in your browser or use it as needed.
 
+## Command-Line Upload Script
+
+A Bash script (`upload.sh`) is provided in the `script_use/` directory for quick uploads from the command line on macOS.
+
+**Features:**
+
+- Uploads files specified as arguments.
+- If no arguments are given, attempts to upload PNG image data directly from the clipboard (requires `pngpaste`: `brew install pngpaste`).
+- Retrieves the `AUTH_KEY` from 1Password CLI (requires `op`: `brew install --cask 1password-cli`).
+- Copies the returned URL to the clipboard.
+
+**Setup:**
+
+1.  Ensure `op` and `pngpaste` are installed.
+2.  Make sure you are logged into the `op` CLI (`op signin`).
+3.  Edit the script (`script_use/upload.sh`) to:
+    *   Set the correct `UPLOAD_URL`.
+    *   Adjust the `op read` command to point to your `AUTH_KEY` secret in 1Password.
+4.  Make the script executable: `chmod +x script_use/upload.sh`
+
+**Usage:**
+
+```bash
+# Upload a specific file
+./script_use/upload.sh /path/to/your/image.png
+
+# Upload image from clipboard
+./script_use/upload.sh
+```
+
 ## Using with Shortcuts (macOS/iOS)
 
 This worker is ideal for quickly uploading clipboard content or files via Shortcuts.
