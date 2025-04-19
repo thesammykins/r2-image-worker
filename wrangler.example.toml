@@ -1,28 +1,51 @@
 # Example wrangler.toml configuration for r2-image-worker
 
 # Top-level configuration
-name = "r2-image-worker" # Name of your worker (can be changed)
-main = "src/index.ts"    # Entry point for your worker code (usually correct)
+name = "r2-image-worker"       # Name of your worker (can be changed)
+main = "src/index.ts"           # Entry point for your worker code
 compatibility_date = "YYYY-MM-DD" # Replace with a recent date, e.g., "2024-09-02"
 
-# Route configuration for your custom domain
-# Replace the pattern with the domain/subdomain you want to use
+# --- Routes --- 
+# Replace patterns with the domains/subdomains you will use.
+# You need DNS configured for each pattern pointing to Cloudflare.
+
 [[routes]]
-pattern = "your-subdomain.your-domain.com/" # Highly recommended
+pattern = "upload.your-domain.com" # *** Replace with your dedicated upload hostname ***
+custom_domain = true
+
+[[routes]]
+pattern = "images.your-domain.com" # *** Replace with hostname for serving images ***
+custom_domain = true
+
+[[routes]]
+pattern = "files.your-domain.com"  # *** Replace with hostname for serving non-images ***
 custom_domain = true
 
 # R2 Bucket Binding
-# This makes your R2 bucket available to the worker script via the 'BUCKET' binding
 [[r2_buckets]]
-binding = "BUCKET"              # Variable name in your Worker code (env.BUCKET) - KEEP THIS
+binding = "BUCKET"              # Variable name in Worker code (env.BUCKET) - KEEP THIS
 bucket_name = "your-production-r2-bucket-name" # *** Replace with your actual R2 bucket name ***
+preview_bucket_name = "your-preview-r2-bucket-name" # *** Replace with your preview R2 bucket name (used for `wrangler dev` and tests) ***
 
 # Placement configuration
-# "smart" is usually a good default
 [placement]
-mode = "smart"
+mode = "smart" # "smart" is usually a good default
+
+# Variables and Secrets
+# Define variables/secrets needed by your worker.
+# AUTH_KEY is required for the /upload endpoint.
+# You can set these directly here for development/testing,
+# but consider using `wrangler secret put` for production.
+[vars]
+# AUTH_KEY = "your-strong-secret-key-here" # *** Replace with your actual upload key ***
 
 # Observability / Logging (Optional)
-# Enables basic logging viewable via `wrangler tail` or Cloudflare dashboard
 #[observability]
 #enabled = true
+
+# Development server settings (Optional)
+#[dev]
+#ip = "127.0.0.1"
+#port = 8787
+#local_protocol = "http"
+#persist = true
