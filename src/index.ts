@@ -92,53 +92,53 @@ const ONE_YEAR_IN_SECONDS = 31536000;
 
 // Helper function to validate cache-control headers
 function getValidCacheControl(header: string | undefined): string {
-	const defaultCacheControl = `public, max-age=${ONE_YEAR_IN_SECONDS}`;
-	if (!header) {
-		return defaultCacheControl;
-	}
-	// A whitelist of allowed directives (case-insensitive)
-	const allowedDirectives = new Set([
-		'public',
-		'private',
-		'no-cache',
-		'no-store',
-		'must-revalidate',
-		'proxy-revalidate',
-		'immutable',
-		'no-transform',
-		's-maxage',
-		'max-age',
-		'max-stale',
-		'min-fresh',
-		'stale-while-revalidate',
-		'stale-if-error',
-	]);
+  const defaultCacheControl = `public, max-age=${ONE_YEAR_IN_SECONDS}`;
+  if (!header) {
+    return defaultCacheControl;
+  }
+  // A whitelist of allowed directives (case-insensitive)
+  const allowedDirectives = new Set([
+    'public',
+    'private',
+    'no-cache',
+    'no-store',
+    'must-revalidate',
+    'proxy-revalidate',
+    'immutable',
+    'no-transform',
+    's-maxage',
+    'max-age',
+    'max-stale',
+    'min-fresh',
+    'stale-while-revalidate',
+    'stale-if-error',
+  ]);
 
-	// Split header into directives, trim, and validate each
-	const directives = header.split(',').map(d => d.trim());
-	for (const directive of directives) {
-		// Check for key[=value] format
-		const [key, value] = directive.split('=', 2);
-		const lowerKey = key.toLowerCase();
+  // Split header into directives, trim, and validate each
+  const directives = header.split(',').map(d => d.trim());
+  for (const directive of directives) {
+    // Check for key[=value] format
+    const [key, value] = directive.split('=', 2);
+    const lowerKey = key.toLowerCase();
 
-		if (!allowedDirectives.has(lowerKey)) {
-			return defaultCacheControl;
-		}
+    if (!allowedDirectives.has(lowerKey)) {
+      return defaultCacheControl;
+    }
 
-		// If directive expects a value, check that value is a non-negative integer
-		if (['max-age', 's-maxage', 'max-stale', 'min-fresh', 'stale-while-revalidate', 'stale-if-error'].includes(lowerKey)) {
-			if (typeof value === 'undefined' || !/^\d+$/.test(value)) {
-				return defaultCacheControl;
-			}
-		} else {
-			// If value is present for a directive that shouldn't have one, reject
-			if (typeof value !== 'undefined') {
-				return defaultCacheControl;
-			}
-		}
-	}
+    // If directive expects a value, check that value is a non-negative integer
+    if (['max-age', 's-maxage', 'max-stale', 'min-fresh', 'stale-while-revalidate', 'stale-if-error'].includes(lowerKey)) {
+      if (typeof value === 'undefined' || !/^\d+$/.test(value)) {
+        return defaultCacheControl;
+      }
+    } else {
+      // If value is present for a directive that shouldn't have one, reject
+      if (typeof value !== 'undefined') {
+        return defaultCacheControl;
+      }
+    }
+  }
 
-	return header;
+  return header;
 }
 
 // Define the app with explicit Bindings type for context
