@@ -88,6 +88,20 @@ async function findDuplicateFile(bucket: R2Bucket, fileHash: string, prefix: str
   return null
 }
 
+// Helper function to validate cache-control headers
+function getValidCacheControl(header: string | undefined): string {
+	const defaultCacheControl = 'public, max-age=31536000';
+	if (!header) {
+		return defaultCacheControl;
+	}
+	// Basic validation to allow common directives and prevent header injection.
+	const validCacheControlRegex = /^[a-zA-Z0-9\s,-=]+$/;
+	if (validCacheControlRegex.test(header)) {
+		return header;
+	}
+	return defaultCacheControl;
+}
+
 // Define the app with explicit Bindings type for context
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -123,10 +137,6 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   const fileHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
-
-  if (!fileHash) {
-    return c.text('Failed to calculate file hash', 500)
-  }
 
   // Determine prefix and if it's an image
   let prefix: string;
@@ -178,7 +188,7 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
     uploadTimestamp: Date.now(),
     mimeType: mimeType
   }
-  const cacheControl = data.cache_control || `public, max-age=31536000`
+  const cacheControl = getValidCacheControl(data.cache_control)
   try {
     await c.env.BUCKET.put(r2Key, buffer, {
       httpMetadata: { contentType: mimeType, cacheControl: cacheControl },
