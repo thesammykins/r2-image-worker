@@ -16,7 +16,7 @@ interface TestBindings {
 // Cast the imported env to our specific type
 const testEnv = env as TestBindings;
 // We still expect the AUTH_KEY value specifically
-const EXPECTED_AUTH_KEY = 'test-secret-key-12345'; 
+const EXPECTED_AUTH_KEY = 'test-secret-key';
 
 // --- Read Test Hostnames from Environment --- 
 // Tests will now expect the hostnames defined in wrangler.toml
@@ -340,7 +340,7 @@ describe('R2 Image Worker Tests (vitest-pool-workers)', () => {
     expect(await getRes.arrayBuffer()).toEqual(fileBuffer);
     expect(getRes.headers.get('content-type')).toBe('image/png');
     expect(getRes.headers.get('etag')).toBeDefined();
-    expect(getRes.headers.get('cache-control')).toContain('max-age=2592000'); // 30 days
+    expect(getRes.headers.get('cache-control')).toContain('max-age=31536000');
   });
 
   it('GET: should successfully retrieve an uploaded file (via env files domain)', async () => {
@@ -367,7 +367,7 @@ describe('R2 Image Worker Tests (vitest-pool-workers)', () => {
     expect(await getRes.arrayBuffer()).toEqual(fileBuffer); 
     expect(getRes.headers.get('content-type')).toBe('text/plain');
     expect(getRes.headers.get('etag')).toBeDefined();
-    expect(getRes.headers.get('cache-control')).toContain('max-age=2592000'); 
+    expect(getRes.headers.get('cache-control')).toContain('max-age=31536000');
   });
 
   it('GET: should return 404 for non-existent key', async () => {

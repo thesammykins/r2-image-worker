@@ -126,6 +126,7 @@ The body should be `multipart/form-data` containing:
 - `file`: The image, video, or other file binary.
 - `filename` (Optional): The desired original filename (e.g., `my_vacation_video.mp4`). If omitted, the filename from the `file` part is used.
 - `url_preference` (Optional): Text value indicating desired URL type for images. Send `Preview-Optimized URL` to get a Cloudflare Image Transformation URL. If omitted or set to anything else (e.g., `Original URL`), a direct link is returned.
+- `cache_control` (Optional): A standard `Cache-Control` header value (e.g., `public, max-age=3600`). If omitted, a default of `public, max-age=31536000` (1 year) is used.
 
 **Response:**
 

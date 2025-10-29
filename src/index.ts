@@ -7,7 +7,6 @@
 import { Hono } from 'hono/quick'
 import type { Context, Next } from 'hono' // Import Context and Next types
 import { cache } from 'hono/cache'
-import { sha256 } from 'hono/utils/crypto'
 import { getExtension } from 'hono/utils/mime'
 import { nanoid } from 'nanoid' // Import nanoid
 
@@ -26,8 +25,6 @@ interface FileMetadata {
   uploadTimestamp: number
   mimeType: string
 }
-
-const maxAge = 60 * 60 * 24 * 30 // 30 days
 
 // Helper function to sanitize filenames
 function sanitizeFilename(name: string): string {
@@ -109,7 +106,7 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>, next: Next) => {
 // Handle the file upload
 app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
   // Expect file, filename, and the new optional preference
-  const data = await c.req.parseBody<{ file?: File, filename?: string, url_preference?: string }>()
+  const data = await c.req.parseBody<{ file?: File, filename?: string, url_preference?: string, cache_control?: string }>()
 
   if (!data?.file) {
     return c.text('Missing "file" in form data', 400)
@@ -123,12 +120,13 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
 
   // Calculate file hash
   const buffer = await body.arrayBuffer()
-  const fileHashNullable = await sha256(new Uint8Array(buffer))
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  const fileHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 
-  if (!fileHashNullable) {
+  if (!fileHash) {
     return c.text('Failed to calculate file hash', 500)
   }
-  const fileHash = fileHashNullable
 
   // Determine prefix and if it's an image
   let prefix: string;
@@ -180,10 +178,10 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
     uploadTimestamp: Date.now(),
     mimeType: mimeType
   }
-
+  const cacheControl = data.cache_control || `public, max-age=31536000`
   try {
     await c.env.BUCKET.put(r2Key, buffer, {
-      httpMetadata: { contentType: mimeType },
+      httpMetadata: { contentType: mimeType, cacheControl: cacheControl },
       customMetadata: Object.entries(metadata).reduce((acc, [key, value]) => {
         acc[key] = String(value)
         return acc
@@ -218,14 +216,6 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
   return c.text(finalUrl, 200)
 })
 
-// Apply caching middleware to GET requests
-app.get(
-  '*',
-  cache({
-    cacheName: 'r2-media-worker', // Updated cache name
-    cacheControl: `public, max-age=${maxAge}` // Define cache control directly here
-  })
-)
 
 // --- Updated GET Handler ---
 // Handles serving files from /images/:key, /videos/:key, or /files/:key
