@@ -7,7 +7,6 @@
 import { Hono } from 'hono/quick'
 import type { Context, Next } from 'hono' // Import Context and Next types
 import { cache } from 'hono/cache'
-import { sha256 } from 'hono/utils/crypto'
 import { getExtension } from 'hono/utils/mime'
 import { nanoid } from 'nanoid' // Import nanoid
 
@@ -26,8 +25,6 @@ interface FileMetadata {
   uploadTimestamp: number
   mimeType: string
 }
-
-const maxAge = 60 * 60 * 24 * 30 // 30 days
 
 // Helper function to sanitize filenames
 function sanitizeFilename(name: string): string {
@@ -91,6 +88,59 @@ async function findDuplicateFile(bucket: R2Bucket, fileHash: string, prefix: str
   return null
 }
 
+const ONE_YEAR_IN_SECONDS = 31536000;
+
+// Helper function to validate cache-control headers
+function getValidCacheControl(header: string | undefined): string {
+	const defaultCacheControl = `public, max-age=${ONE_YEAR_IN_SECONDS}`;
+	if (!header) {
+		return defaultCacheControl;
+	}
+	// A whitelist of allowed directives (case-insensitive)
+	const allowedDirectives = new Set([
+		'public',
+		'private',
+		'no-cache',
+		'no-store',
+		'must-revalidate',
+		'proxy-revalidate',
+		'immutable',
+		'no-transform',
+		's-maxage',
+		'max-age',
+		'max-stale',
+		'min-fresh',
+		'stale-while-revalidate',
+		'stale-if-error',
+	]);
+
+	// Split header into directives, trim, and validate each
+	const directives = header.split(',').map(d => d.trim());
+	for (const directive of directives) {
+		// Check for key[=value] format
+		const [key, value] = directive.split('=', 2);
+		const lowerKey = key.toLowerCase();
+
+		if (!allowedDirectives.has(lowerKey)) {
+			return defaultCacheControl;
+		}
+
+		// If directive expects a value, check that value is a non-negative integer
+		if (['max-age', 's-maxage', 'max-stale', 'min-fresh', 'stale-while-revalidate', 'stale-if-error'].includes(lowerKey)) {
+			if (typeof value === 'undefined' || !/^\d+$/.test(value)) {
+				return defaultCacheControl;
+			}
+		} else {
+			// If value is present for a directive that shouldn't have one, reject
+			if (typeof value !== 'undefined') {
+				return defaultCacheControl;
+			}
+		}
+	}
+
+	return header;
+}
+
 // Define the app with explicit Bindings type for context
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -109,7 +159,7 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>, next: Next) => {
 // Handle the file upload
 app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
   // Expect file, filename, and the new optional preference
-  const data = await c.req.parseBody<{ file?: File, filename?: string, url_preference?: string }>()
+  const data = await c.req.parseBody<{ file?: File, filename?: string, url_preference?: string, cache_control?: string }>()
 
   if (!data?.file) {
     return c.text('Missing "file" in form data', 400)
@@ -123,12 +173,9 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
 
   // Calculate file hash
   const buffer = await body.arrayBuffer()
-  const fileHashNullable = await sha256(new Uint8Array(buffer))
-
-  if (!fileHashNullable) {
-    return c.text('Failed to calculate file hash', 500)
-  }
-  const fileHash = fileHashNullable
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  const fileHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 
   // Determine prefix and if it's an image
   let prefix: string;
@@ -180,10 +227,10 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
     uploadTimestamp: Date.now(),
     mimeType: mimeType
   }
-
+  const cacheControl = getValidCacheControl(data.cache_control)
   try {
     await c.env.BUCKET.put(r2Key, buffer, {
-      httpMetadata: { contentType: mimeType },
+      httpMetadata: { contentType: mimeType, cacheControl: cacheControl },
       customMetadata: Object.entries(metadata).reduce((acc, [key, value]) => {
         acc[key] = String(value)
         return acc
@@ -218,36 +265,42 @@ app.put('/upload', async (c: Context<{ Bindings: Bindings }>) => {
   return c.text(finalUrl, 200)
 })
 
-// Apply caching middleware to GET requests
-app.get(
-  '*',
-  cache({
-    cacheName: 'r2-media-worker', // Updated cache name
-    cacheControl: `public, max-age=${maxAge}` // Define cache control directly here
-  })
-)
 
 // --- Updated GET Handler ---
 // Handles serving files from /images/:key, /videos/:key, or /files/:key
 app.get('/:type(images|videos|files)/:key', async (c: Context<{ Bindings: Bindings }>) => {
-  const type = c.req.param('type'); // Type is guaranteed by regex
-  const key = c.req.param('key');  // Key is guaranteed by regex
+	const type = c.req.param('type'); // Type is guaranteed by regex
+	const key = c.req.param('key');  // Key is guaranteed by regex
+	const r2Key = `${type}/${key}`;
 
-  const r2Key = `${type}/${key}`; 
+	const cache = caches.default;
+	const cachedResponse = await cache.match(c.req.url);
+	if (cachedResponse) {
+		return cachedResponse;
+	}
 
-  const object = await c.env.BUCKET.get(r2Key)
-  if (!object) {
-    return c.notFound() 
-  }
+	const object = await c.env.BUCKET.get(r2Key);
+	if (!object) {
+		return c.notFound();
+	}
 
-  const headers = new Headers()
-  object.writeHttpMetadata(headers)
-  headers.set('etag', object.httpEtag)
+	const headers = new Headers();
+	object.writeHttpMetadata(headers);
+	headers.set('etag', object.httpEtag);
 
-  const headerRecord: Record<string, string> = {}
-  headers.forEach((value, key) => { headerRecord[key] = value })
+	const response = new Response(object.body, {
+		headers: headers,
+		status: 200
+	});
 
-  return c.body(object.body, 200, headerRecord)
+	const cacheControl = headers.get('cache-control');
+	const shouldCache = cacheControl && !/(private|no-store|no-cache|max-age=0)/.test(cacheControl);
+
+	if (shouldCache) {
+		c.executionCtx.waitUntil(cache.put(c.req.url, response.clone()));
+	}
+
+	return response;
 })
 
 export default app
