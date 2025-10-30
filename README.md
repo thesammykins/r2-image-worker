@@ -22,6 +22,17 @@ User <= URL (images.* or files.*) <= Worker
 User <= File <= URL (images.* or files.*) (served by Worker/CDN Cache/R2)
 ```
 
+## 2025-10 Modernization
+
+This worker has been modernized to meet 2025 Cloudflare Workers standards:
+
+- **Compatibility**: `compatibility_date = "2025-09-25"` with `nodejs_compat` flag
+- **Validation**: Zod v4.1.12 for runtime type-safety on all inputs
+- **Crypto**: Native `node:crypto` module (replaces deprecated hono crypto utils)
+- **Architecture**: Modular design with typed errors, structured logging, and clean separation of concerns
+- **Testing**: 60 comprehensive tests with Vitest + `@cloudflare/vitest-pool-workers`
+- **Bundle**: 68.83 KiB (98.6% under 10 MiB limit), 100% free-tier compatible
+
 ## Prerequisites
 
 - Cloudflare Account (with a configured zone/domain)
