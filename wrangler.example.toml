@@ -4,6 +4,7 @@
 name = "r2-image-worker"       # Name of your worker (can be changed)
 main = "src/index.ts"           # Entry point for your worker code
 compatibility_date = "YYYY-MM-DD" # Replace with a recent date, e.g., "2024-09-02"
+compatibility_flags = ["nodejs_compat"]
 
 # --- Routes --- 
 # Replace patterns with the domains/subdomains you will use.
@@ -38,6 +39,9 @@ mode = "smart" # "smart" is usually a good default
 # but consider using `wrangler secret put` for production.
 [vars]
 # AUTH_KEY = "your-strong-secret-key-here" # *** Replace with your actual upload key ***
+# UPLOAD_HOSTNAME = "upload.your-domain.com"
+# IMAGE_HOSTNAME = "images.your-domain.com"
+# FILES_HOSTNAME = "files.your-domain.com"
 
 # Observability / Logging (Optional)
 #[observability]
