@@ -3,7 +3,8 @@
 # Top-level configuration
 name = "r2-image-worker"       # Name of your worker (can be changed)
 main = "src/index.ts"           # Entry point for your worker code
-compatibility_date = "YYYY-MM-DD" # Replace with a recent date, e.g., "2024-09-02"
+compatibility_date = "2025-09-25" # Latest stable compatibility date (Sept 2025)
+compatibility_flags = ["nodejs_compat"] # Enable Node.js built-ins (Buffer, streams, etc.)
 
 # --- Routes --- 
 # Replace patterns with the domains/subdomains you will use.
@@ -39,13 +40,15 @@ mode = "smart" # "smart" is usually a good default
 [vars]
 # AUTH_KEY = "your-strong-secret-key-here" # *** Replace with your actual upload key ***
 
-# Observability / Logging (Optional)
-#[observability]
-#enabled = true
+# Observability / Logging
+# Free tier: 200K events/day until Jan 15, 2026, then 10K/day
+# Provides tail logs, exceptions, and performance metrics
+[observability]
+enabled = true
 
-# Development server settings (Optional)
-#[dev]
-#ip = "127.0.0.1"
-#port = 8787
-#local_protocol = "http"
-#persist = true
+# Development server settings
+[dev]
+ip = "127.0.0.1"
+port = 8787
+local_protocol = "http"
+persist_to = ".wrangler/state"
