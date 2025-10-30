@@ -1,55 +1,37 @@
-// Tests for the R2 Image Worker using @cloudflare/vitest-pool-workers
-import { env, SELF } from 'cloudflare:test'; // Import test helpers
-import { describe, expect, it, beforeAll, afterAll, beforeEach } from 'vitest';
-import type { R2Bucket } from '@cloudflare/workers-types';
+import { env, SELF } from 'cloudflare:test'
+import { describe, expect, it, beforeAll, afterAll, beforeEach } from 'vitest'
+import type { R2Bucket } from '@cloudflare/workers-types'
+import { createHash } from 'node:crypto'
+import type { Bindings } from '../src/handlers/types'
 
-// Define the expected shape of the environment bindings for tests
-interface TestBindings {
-    BUCKET: R2Bucket;
-    AUTH_KEY: string;
-    // Expect hostname variables from wrangler.toml
-    IMAGE_HOSTNAME: string;
-    FILES_HOSTNAME: string;
-    UPLOAD_HOSTNAME: string;
-}
+const testEnv = env as Bindings
+const EXPECTED_AUTH_KEY = 'test-secret-key-12345'
 
-// Cast the imported env to our specific type
-const testEnv = env as TestBindings;
-// We still expect the AUTH_KEY value specifically
-const EXPECTED_AUTH_KEY = 'test-secret-key-12345'; 
+const TEST_PROTOCOL = 'http'
+const TEST_UPLOAD_HOST = testEnv.UPLOAD_HOSTNAME || 'upload.localhost'
+const TEST_IMAGES_HOST = testEnv.IMAGE_HOSTNAME || 'images.localhost'
+const TEST_FILES_HOST = testEnv.FILES_HOSTNAME || 'files.localhost'
+const UPLOAD_URL_BASE = `${TEST_PROTOCOL}://${TEST_UPLOAD_HOST}`
 
-// --- Read Test Hostnames from Environment --- 
-// Tests will now expect the hostnames defined in wrangler.toml
-// or overridden by a specific test environment if configured.
-const TEST_PROTOCOL = 'http'; // Keep using http for test simplicity
-const TEST_UPLOAD_HOST = testEnv.UPLOAD_HOSTNAME; 
-const TEST_IMAGES_HOST = testEnv.IMAGE_HOSTNAME;
-const TEST_FILES_HOST = testEnv.FILES_HOSTNAME;
-const UPLOAD_URL_BASE = `${TEST_PROTOCOL}://${TEST_UPLOAD_HOST}`;
-// -------------------------------------------
-
-// Helper to create a test file
 function createTestFile(name: string, type: string, content: string): File {
-  const blob = new Blob([content], { type });
-  return new File([blob], name, { type });
+  const blob = new Blob([content], { type })
+  return new File([blob], name, { type })
 }
 
-// Helper to clear the R2 bucket used in tests
 async function clearTestBucket() {
-    const bucket = testEnv.BUCKET;
-    const listed = await bucket.list();
-    const keysToDelete = listed.objects.map(obj => obj.key);
+    const bucket = testEnv.BUCKET
+    const listed = await bucket.list()
+    const keysToDelete = listed.objects.map(obj => obj.key)
     if (keysToDelete.length > 0) {
-        await bucket.delete(keysToDelete);
-        console.log(`Cleared ${keysToDelete.length} objects from test bucket.`);
+        await bucket.delete(keysToDelete)
+        console.log(`Cleared ${keysToDelete.length} objects from test bucket.`)
     }
 }
 
-// Helper function to calculate SHA-256 hash (mimics worker internal)
 async function calculateSha256(data: ArrayBuffer): Promise<string> {
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const hash = createHash('sha256')
+  hash.update(new Uint8Array(data))
+  return hash.digest('hex')
 }
 
 describe('R2 Image Worker Tests (vitest-pool-workers)', () => {
@@ -379,11 +361,95 @@ describe('R2 Image Worker Tests (vitest-pool-workers)', () => {
   });
 
   it('GET: should return 404 for invalid type prefix', async () => {
-    // Use images host from env for example
-    const res = await SELF.fetch(`${TEST_PROTOCOL}://${TEST_IMAGES_HOST}/documents/some-key.doc`, { method: 'GET' });
-    expect(res.status).toBe(404);
-  });
+    const res = await SELF.fetch(`${TEST_PROTOCOL}://${TEST_IMAGES_HOST}/documents/some-key.doc`, { method: 'GET' })
+    expect(res.status).toBe(404)
+  })
 
-  // TODO: Add tests for sanitizeFilename, generateUniqueFilename if they were exported
-  // TODO: Add test for hash calculation failure (difficult to reliably trigger)
+  it('VALIDATION: should use node:crypto for hashing (compatibility test)', async () => {
+    const fileContent = 'node crypto test content'
+    const fileBuffer = new TextEncoder().encode(fileContent).buffer as ArrayBuffer
+    const expectedHash = await calculateSha256(fileBuffer)
+    const fileName = 'crypto-test.txt'
+    const formData = new FormData()
+    formData.append('file', createTestFile(fileName, 'text/plain', fileContent))
+
+    const res = await SELF.fetch(`${UPLOAD_URL_BASE}/upload`, { 
+      method: 'PUT',
+      headers: { 'X-Auth-Key': testEnv.AUTH_KEY },
+      body: formData,
+    })
+
+    expect(res.status).toBe(200)
+    const url = await res.text()
+    const urlPath = new URL(url).pathname
+    const r2Key = urlPath.substring(1)
+    const bucket = testEnv.BUCKET
+    const storedObject = await bucket.head(r2Key)
+    expect(storedObject?.customMetadata?.originalHash).toBe(expectedHash)
+  })
+
+  it('VALIDATION: should handle missing file field correctly', async () => {
+    const formData = new FormData()
+    formData.append('filename', 'test.txt')
+
+    const res = await SELF.fetch(`${UPLOAD_URL_BASE}/upload`, {
+      method: 'PUT',
+      headers: { 'X-Auth-Key': testEnv.AUTH_KEY },
+      body: formData,
+    })
+
+    expect(res.status).toBe(400)
+    const errorText = await res.text()
+    expect(errorText).toContain('Missing "file"')
+  })
+
+  it('VALIDATION: should use provided filename parameter over file.name', async () => {
+    const fileContent = 'test content'
+    const formData = new FormData()
+    const file = createTestFile('original-name.txt', 'text/plain', fileContent)
+    formData.append('file', file)
+    formData.append('filename', 'override-name.txt')
+
+    const res = await SELF.fetch(`${UPLOAD_URL_BASE}/upload`, {
+      method: 'PUT',
+      headers: { 'X-Auth-Key': testEnv.AUTH_KEY },
+      body: formData,
+    })
+
+    expect(res.status).toBe(200)
+    const url = await res.text()
+    expect(url).toMatch(/files\/override-name_[a-zA-Z0-9_-]+\.txt/)
+    
+    const urlPath = new URL(url).pathname
+    const r2Key = urlPath.substring(1)
+    const bucket = testEnv.BUCKET
+    const storedObject = await bucket.head(r2Key)
+    expect(storedObject?.customMetadata?.originalFilename).toBe('override-name.txt')
+  })
+
+  it('UPLOAD: should correctly determine file type prefix for different mimetypes', async () => {
+    const testCases = [
+      { content: 'image test', type: 'image/png', expectedPrefix: 'images' },
+      { content: 'video test', type: 'video/webm', expectedPrefix: 'videos' },
+      { content: 'audio test', type: 'audio/mp3', expectedPrefix: 'files' },
+      { content: 'doc test', type: 'application/pdf', expectedPrefix: 'files' },
+    ]
+
+    for (const testCase of testCases) {
+      const formData = new FormData()
+      formData.append('file', createTestFile(`test.${testCase.type.split('/')[1]}`, testCase.type, testCase.content))
+
+      const res = await SELF.fetch(`${UPLOAD_URL_BASE}/upload`, {
+        method: 'PUT',
+        headers: { 'X-Auth-Key': testEnv.AUTH_KEY },
+        body: formData,
+      })
+
+      expect(res.status).toBe(200)
+      const url = await res.text()
+      expect(url).toMatch(new RegExp(`/${testCase.expectedPrefix}/`))
+      
+      await clearTestBucket()
+    }
+  })
 }); 
