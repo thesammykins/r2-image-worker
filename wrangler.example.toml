@@ -39,6 +39,9 @@ mode = "smart" # "smart" is usually a good default
 # but consider using `wrangler secret put` for production.
 [vars]
 # AUTH_KEY = "your-strong-secret-key-here" # *** Replace with your actual upload key ***
+# UPLOAD_HOSTNAME = "upload.your-domain.com"
+# IMAGE_HOSTNAME = "images.your-domain.com"
+# FILES_HOSTNAME = "files.your-domain.com"
 
 # Observability / Logging
 # Free tier: 200K events/day until Jan 15, 2026, then 10K/day
